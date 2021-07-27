@@ -1,0 +1,374 @@
+---
+output:
+  pdf_document: default
+  author: "Donovan Doyle"
+  title: "Positional Value and The NFL Draft: 2010-2020"
+  html_document: default
+---
+
+# Intro
+
+Every NFL Draft, some of the most heated debates that take place have to do with positional value. Teams who are in need of a quarterback, and choose not to select one, or teams who draft running backs early, come under fire. I wanted to take a look at the data and see if these critiques are valid. Here are some of the questions I wanted to answer:
+
+* Do teams take positional value into account? If so, how much of this is exaggerated due to quarterbacks? As analytics has grown in the sport, has this trended upwards over time?
+* Should teams take positional value into account? Do teams who put a strong emphasis on positional value in the draft render better results on the field?
+
+Data used was from Mike Renner at PFF, using his WAR positional value chart, as well as Lee Sharpe's NFL Data for draft and wins information.
+A few key assumptions / problems: 
+
+* A handful of players from the draft data were just listed as "OL". I, by default, included these in the "IOL" pool.
+* I included all specialists drafted together and labeled them with a WAR of 0.
+* The classic problem of edge rusher vs defensive end vs outside linebacker is at play as well. Any players listed as defensive ends I labeled with the Edge Rusher value for WAR, and any player listed as a linebacker I labeled as an LB. Von Miller, for example, is listed as an LB, even though he's better classified as an Edge Rusher.
+
+
+```{r, results = 'hide', message = FALSE, warning = FALSE, echo = FALSE}
+library(dplyr)
+library(knitr)
+library(readr)
+
+# Reading in the WAR value chart from Mike Renner at PFF. Very forced but just trying to get it all organized
+position <- c("QB", "WR", "S", "CB", "TE", "IOL", "OT", "ED", "LB", "RB", "DI")
+war <- c(2.5134, 0.701, 0.6039, 0.5172, 0.3426, 0.3212, 0.2968, 0.2783, 0.2762, 0.2166, 0.1868)
+pff_value1 <- cbind(position, war)
+
+pff_value <- as.data.frame(pff_value1)
+
+#setting proper structures
+pff_value <- pff_value %>%
+  mutate(position = as.factor(position), war = as.numeric(war))
+
+
+
+#Reading in draft pick data and values from Lee Sharpe
+draft_picks <- read_csv("https://raw.githubusercontent.com/leesharpe/nfldata/master/data/draft_picks.csv")
+# we do a left join here because the names won't always match but don't want to lose any nflscrapR rows
+
+draft_values <- read_csv("https://raw.githubusercontent.com/leesharpe/nfldata/master/data/draft_values.csv")
+draft_picks <- draft_picks %>%
+  inner_join(draft_values,by=c("pick"="pick"))
+
+draft_picks <- draft_picks %>%
+  mutate(position = as.factor(position))
+
+
+
+#Brute force here but IDing the positions to make the merge easier. Assumptions made here: players just listed as "OL" I made IOLs. Additionally, made specialists all together and planning on making their WAR 0. Also unable to differentiate the classic problem of 4-3 DE and 3-4 DE's, as well as OLB's who are rushers vs 4-3 OLBs. For the sake of this, everybody listed as a DE is an ED and everybody listed as an LB is just an LB. Von Miller, for example, is an LB.
+draft_picks1 <- draft_picks %>%
+  mutate(position_pff = case_when(position == "C" | position == "OL" | position == "G" ~ "IOL",
+                              position == "CB" ~ "CB",
+                              position == "DB" | position == "S" ~ "S",
+                              position == "DE" ~ "ED",
+                              position == "DL" | position == "DT" | position == "NT" ~ "DI",
+                              position == "K" | position == "LS" | position == "KR" | position == "P" ~ "SP",
+                              position == "LB" ~ "LB",
+                              position == "QB" ~ "QB",
+                              position == "T" ~ "OT",
+                              position == "RB" ~ "RB",
+                              position == "TE" ~ "TE",
+                              position == "WR" ~ "WR"))
+
+
+
+#cleaning up draft picks data to only include 2010 on. Fixing up teams
+draft_picks2 <- draft_picks1 %>%
+  select(season, team, round, pick, pfr_name, side, position, position_pff, stuart:pff) %>%
+  filter(season >= 2010) %>%
+  filter(season != 2021) %>%
+  mutate(team = case_when(team == "STL" ~ "LA",
+                          team == "OAK" ~ "LV",
+                          team == "SD" ~ "LAC",
+                          TRUE ~ as.character(team)))
+
+#joining value chart to the draft pick chart
+pff_value <- pff_value %>%
+  rename("position_pff" = "position")
+value_draft_picks <- left_join(draft_picks2, pff_value, by = "position_pff")
+
+#making specialists worth 0 WAR
+value_draft_picks[is.na(value_draft_picks)] <- 0
+round_by_round_value <- value_draft_picks %>%
+  mutate(round = as.character(round)) %>%
+  group_by(round) %>%
+  summarize(mean_value = mean(war))
+
+
+```
+# Do teams take positional value into account? How does this differ by round?
+
+```{r, warning = FALSE, echo = FALSE}
+library(ggplot2)
+ggplot(round_by_round_value, aes(x = round, y = mean_value)) + geom_bar(stat = "identity") + labs(x = "Round Drafted", y = "Mean WAR of Position Drafted", title = "Positional Value by Round", subtitle = "Mean WAR of position drafted by round from NFL Drafts 2010-2020")
+```
+
+
+This shouldn't be too surprising to see that Round 1 has the highest positional WAR value, as this is where the best players at the best positions go. Let's compare this to the number of quarterback's drafted, to see if that's what's pulling it so high.
+
+```{r, warning = FALSE, echo = FALSE}
+# Creating QB filter and graph
+qb_count_draft <- value_draft_picks %>%
+  filter(position_pff == "QB") %>%
+  mutate(round = as.character(round)) %>%
+  group_by(round) %>%
+  ggplot(aes(x = round)) + geom_bar() + labs(x = "Round", y = "# of QB's selected", title = "Quarterback's selected by Round, 2010-2020")
+
+qb_count_draft
+```
+
+
+This is interesting. While the round with the most QB's taken is round 1, it certainly doesn't explain the flat-lining across the rest of the rounds. This could mean that while teams recognize the value of taking a quarterback early, they strongly discount positional value through the remainder of the draft.
+
+It may also be the case that analytics weren't as popular through the early portion we're working with. Let's see how these graphs have changed over time.
+
+# Positional value trend over time
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+
+# Plotting mean war over time
+rounds_over_time <- value_draft_picks %>%
+  mutate(round = as.character(round)) %>%
+  group_by(season, round) %>%
+  summarize(mean_value = mean(war)) %>%
+  ggplot(aes(x = round, y = mean_value)) + geom_bar(stat = "identity") + facet_wrap(~ season) + labs(title = "Positional WAR in the NFL Draft", subtitle = "Mean Positional WAR by Round from 2010-2020", y = "Mean Positional War by Round", x = "Round Picked") + theme(axis.text.x = element_blank())
+
+rounds_over_time
+```
+
+
+This unfortunately doesn't show us any strong trends, other than it's always been decently random. No strong trend isn't very promising, however. It may show that teams still discount positional value. 
+
+The last trend I'll look at is to see if specific teams have altered their own analysis of Positional WAR over time. The draft can be viewed almost as a zero-sum game in aggregate.
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+
+#I still want to add colors here
+team_over_time <- value_draft_picks %>%
+  group_by(team, season) %>%
+  mutate(mean_value = mean(war)) %>%
+  ggplot(aes(x = season, y = mean_value)) + geom_line() + facet_wrap(~team) + theme(axis.text.x = element_blank(), axis.text.y = element_blank()) + labs(x = "Year", y = "Average Positional WAR of Class Drafted", title = "Average Positional WAR per Draft", subtitle = "By team, 2010-2020 NFL Drafts")
+
+team_over_time
+
+```
+
+
+
+
+This also doesn't show any significant trend across the board, but also doesn't point towards teams becoming more knowledgeable on positional value in the draft.
+
+This made me curious about what Mean WAR / Pick looks like. In the above example, if a team only has one pick and selects a quarterback, it would report a very high value, but this isn't necessarily an accurate example of team-building, since the rest of the roster wasn't improved. Another issue this doesn't address is how it impacts team success, as many of these teams had variable outcomes from 2010-2020.
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+
+
+#adding up number of picks per draft for a team
+team_war_per_pick1 <- value_draft_picks %>%
+  group_by(season, team) %>%
+  summarize(count = n()) %>%
+  left_join(value_draft_picks, by = c("season", "team"))
+
+# Getting average WAR per pick of a draft
+team_war_pick <- team_war_per_pick1 %>%
+  group_by(team, season) %>%
+  mutate(mean_value = mean(war)) %>%
+  summarize(avg_war = mean_value / count) %>%
+  unique()
+
+plot_team_avg_war <- team_war_pick %>%
+  ggplot(aes(x = season, y = avg_war)) + geom_line() + facet_wrap(~ team) + theme(axis.text.x = element_blank(), axis.text.y = element_blank()) + labs(x = "Year", y = "Positional WAR per Pick", title = "Positional WAR per Pick", subtitle = "By team, 2010-2020 NFL Drafts")
+
+plot_team_avg_war
+
+```
+This, again, is a bit too messy to actually show anything. It's time to start asking the core question -- does drafting for positional value, or at least trending in that direction, really matter? Our goal isn't to show that teams need to start specifically drafting for positional value, but if by showing that teams who do focus on positional value in the draft have more success, it can help make the difficult drafting decisions in the grey area -- do you take what you graded as a top 5 IOL, or the 10th best WR, for example.
+
+
+# Should teams take positional value into account?
+To gather the true value of a draft, I'll compare a team's average positional WAR value to their success over the next 4 years. This makes more sense to do than just tracking the following year's success, as rookies will sign 4 year contracts.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+library(tidyr)
+
+#Reading in the wins data from Lee Sharpe
+standings <- read_csv("http://www.habitatring.com/standings.csv") %>%
+  filter(season >= 2010) %>%
+  mutate(team = case_when(team == "STL" ~ "LA",
+                          team == "OAK" ~ "LV",
+                          team == "SD" ~ "LAC",
+                          TRUE ~ as.character(team))) %>%
+  select(season, team, wins) %>%
+  pivot_wider(names_from = "season", values_from = "wins", names_prefix = "w_")
+
+value_picks_wins <- left_join(value_draft_picks, standings, by = "team")
+
+#Creating the 4 years added up win values
+value_picks_wins_aggregated <- value_picks_wins %>%
+  mutate(v_2010 = w_2010 + w_2011 + w_2012 + w_2013,
+         v_2011 = w_2011 + w_2012 + w_2013 + w_2014,
+         v_2012 = w_2012 + w_2013 + w_2014 + w_2015,
+         v_2013 = w_2013 + w_2014 + w_2015 + w_2016,
+         v_2014 = w_2014 + w_2015 + w_2016 + w_2017,
+         v_2015 = w_2015 + w_2016 + w_2017 + w_2018,
+         v_2016 = w_2016 + w_2017 + w_2018 + w_2019,
+         v_2017 = w_2017 + w_2018 + w_2019 + w_2020)
+
+
+#brute force again but re-shaping the dataset so years are the columns now
+value_picks_wins_aggregated1 <- value_picks_wins_aggregated %>%
+  select(season, team, war, w_2010:v_2017) %>%
+  group_by(season, team) %>%
+  mutate(mean_value = mean(war)) %>%
+  select(-war) %>%
+  select(season, team, v_2010:mean_value) %>%
+  unique() %>%
+  filter(season <= 2017) %>%
+  mutate(v = case_when(season == "2010" ~ v_2010,
+                       season == "2011" ~ v_2011,
+                       season == "2012" ~ v_2012,
+                       season == "2013" ~ v_2013,
+                       season == "2014" ~ v_2014,
+                       season == "2015" ~ v_2015,
+                       season == "2016" ~ v_2016,
+                       season == "2017" ~ v_2017,
+                       TRUE ~ as.numeric(season))) %>%
+  select(season, team, mean_value, v)
+
+
+draft_value <- cor(value_picks_wins_aggregated1$mean_value, value_picks_wins_aggregated1$v)
+
+```
+The correlation of average positional WAR value per draft for a team, and their wins over the next 4 years, is `r draft_value`.
+
+This, unfortunately, gives us basically no correlation. I would guess this has to do with the fact that failing teams often shoot to draft high WAR players (read: quarterbacks), and continue to fail, skewing the numbers. I'll give this one more try by filtering out the first round. As we saw in the earlier figures, teams tend to do a good job of drafting high WAR positions in the first round. 
+
+```{r, echo = FALSE}
+value_picks_wins_rounds2_7 <- value_picks_wins_aggregated %>%
+  filter(round != 1) %>%
+  select(season, team, war, w_2010:v_2017) %>%
+  group_by(season, team) %>%
+  mutate(mean_value = mean(war)) %>%
+  select(-war) %>%
+  select(season, team, v_2010:mean_value) %>%
+  unique() %>%
+  filter(season <= 2017) %>%
+  mutate(v = case_when(season == "2010" ~ v_2010,
+                       season == "2011" ~ v_2011,
+                       season == "2012" ~ v_2012,
+                       season == "2013" ~ v_2013,
+                       season == "2014" ~ v_2014,
+                       season == "2015" ~ v_2015,
+                       season == "2016" ~ v_2016,
+                       season == "2017" ~ v_2017,
+                       TRUE ~ as.numeric(season))) %>%
+  select(season, team, mean_value, v)
+
+draft_value_r2_7 <- cor(value_picks_wins_rounds2_7$mean_value, value_picks_wins_rounds2_7$v)
+
+```
+The correlation of average positional WAR value per draft in rounds 2-7 for a team, and their wins over the next 4 years, is `r `draft_value_r2_7`.
+
+This also provides no correlation. Instead of subbing out round 1, I'll sub out quarterbacks, and see if this provides any clearer answers. This unfortunately is still a messy valuation, as it now discredits drafting a QB.
+
+```{r, echo = FALSE}
+value_picks_wins_noqb <- value_picks_wins_aggregated %>%
+  filter(position_pff != "QB") %>%
+  select(season, team, war, w_2010:v_2017) %>%
+  group_by(season, team) %>%
+  mutate(mean_value = mean(war)) %>%
+  select(-war) %>%
+  select(season, team, v_2010:mean_value) %>%
+  unique() %>%
+  filter(season <= 2017) %>%
+  mutate(v = case_when(season == "2010" ~ v_2010,
+                       season == "2011" ~ v_2011,
+                       season == "2012" ~ v_2012,
+                       season == "2013" ~ v_2013,
+                       season == "2014" ~ v_2014,
+                       season == "2015" ~ v_2015,
+                       season == "2016" ~ v_2016,
+                       season == "2017" ~ v_2017,
+                       TRUE ~ as.numeric(season))) %>%
+  select(season, team, mean_value, v)
+
+draft_value_noqb <- cor(value_picks_wins_noqb$mean_value, value_picks_wins_noqb$v)
+
+```
+The correlation between the average positional value per draft for picks that were not quarterbacks, and a team's win values over the next 4 years, is `r draft_value_noqb`.
+
+This provides a slightly stronger negative correlation, although still hardly any correlation at all. This shows that there isn't much of a correlation with winning and picking for positional value, even outside of the realm of quarterbacks.
+
+I'll take a look at WAR per pick, just to see if this yields anything interesting.
+```{r, echo = FALSE}
+war_per_pick_value <- left_join(value_picks_wins_aggregated1, team_war_pick, by = c("season", "team"))
+
+draft_value_war_per <- cor(war_per_pick_value$v, war_per_pick_value$avg_war)
+
+```
+The correlation between average positional WAR value per pick of a draft, and a team's wins over the next 4 years, is `r draft_value_war_per`.
+
+Again, no correlation. The last place I'll look is to see if first round positional value matters. As demonstrated in the earlier figures, the positional WAR value taken is much higher in the first round than in rounds 2-7. This could also be explained by the number of QBs taken in the first round, so we'll do another filtering quarterbacks out of the system as well.
+
+```{r, echo = FALSE}
+#Taking our last value pipe and just filtering for only first round picks.
+value_picks_wins_rd1 <- value_picks_wins_aggregated %>%
+  select(season, round, position_pff, team, war, w_2010:v_2017) %>%
+  filter(round == 1) %>%
+  group_by(season, team) %>%
+  mutate(mean_value = mean(war)) %>%
+  select(-war) %>%
+  select(season, team, v_2010:mean_value) %>%
+  unique() %>%
+  filter(season <= 2017) %>%
+  mutate(v = case_when(season == "2010" ~ v_2010,
+                       season == "2011" ~ v_2011,
+                       season == "2012" ~ v_2012,
+                       season == "2013" ~ v_2013,
+                       season == "2014" ~ v_2014,
+                       season == "2015" ~ v_2015,
+                       season == "2016" ~ v_2016,
+                       season == "2017" ~ v_2017,
+                       TRUE ~ as.numeric(season))) %>%
+  select(season, team, mean_value, v)
+
+cor_rd1_value <- cor(value_picks_wins_rd1$mean_value, value_picks_wins_rd1$v)
+
+
+#Same as above, only getting rid of quarterbacks too
+value_picks_wins_rd1_noqb <- value_picks_wins_aggregated %>%
+  select(season, round, position_pff, team, war, w_2010:v_2017) %>%
+  filter(round == 1) %>%
+  filter(position_pff != "QB") %>%
+  group_by(season, team) %>%
+  mutate(mean_value = mean(war)) %>%
+  select(-war) %>%
+  select(season, team, v_2010:mean_value) %>%
+  unique() %>%
+  filter(season <= 2017) %>%
+  mutate(v = case_when(season == "2010" ~ v_2010,
+                       season == "2011" ~ v_2011,
+                       season == "2012" ~ v_2012,
+                       season == "2013" ~ v_2013,
+                       season == "2014" ~ v_2014,
+                       season == "2015" ~ v_2015,
+                       season == "2016" ~ v_2016,
+                       season == "2017" ~ v_2017,
+                       TRUE ~ as.numeric(season))) %>%
+  select(season, team, mean_value, v)
+
+cor_rd1_value_noqb <- cor(value_picks_wins_rd1_noqb$mean_value, value_picks_wins_rd1_noqb$v)
+
+```
+The correlation between average positional WAR value of first round picks, and a team's wins over the next 4 years, is `r cor_rd1_value`. The correlation between average positional WAR value of first round picks outside of QB's, and a team's wins over the next 4 years, is `r cor_rd1_value_noqb`.
+
+There's still no strong argument to draft for positional value here, as neither ended up very correlated.
+
+# So what?
+The best conclusion I can come up with here can be summarized as follows:
+
+* Teams take into account positional value the most in the first round, particularly with the influx of quarterbacks. Taking positional value into account the "most" doesn't mean much here, though, as they don't seem to value it much through the entire draft. However, valuing by position doesn't seem to have any type of correlation with success.
+
+* Teams don't really consider positional value in the later rounds, but this doesn't seem to have a negative impact on success either.
+
+* Because there's so much uncertainty in how a player will translate to the NFL, there's a lot of noise in how these selections and their positional value actually translate to success. Teams don't draft for positional need, nor does there seem to be any trend pointing towards a good reason why they should.
+
+* This dilemma adds nuance when also taking into consideration the price of players, particularly with the rookie pay scale, and how free agency shapes out. My conjecture would be that given the uncertainty of a player selected in the draft, it's best to just select best player available, ignoring positional need, but in free agency, placing a high premium on positional value, as the prices of these players are significantly higher as well.
+
