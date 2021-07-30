@@ -1,9 +1,9 @@
 ---
 output:
-  pdf_document: default
-  author: "Donovan Doyle"
-  title: "Positional Value and The NFL Draft: 2010-2020"
   html_document: default
+  author: "DMD319"
+  title: "Positional Value and The NFL Draft: 2010-2020"
+  pdf_document: default
 ---
 
 # Intro
