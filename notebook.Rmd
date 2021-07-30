@@ -1,9 +1,7 @@
 ---
-output:
-  html_document: default
+  output: github_document
   author: "DMD319"
   title: "Positional Value and The NFL Draft: 2010-2020"
-  pdf_document: default
 ---
 
 # Intro
