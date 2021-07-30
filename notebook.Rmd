@@ -131,6 +131,7 @@ rounds_over_time <- value_draft_picks %>%
   ggplot(aes(x = round, y = mean_value)) + geom_bar(stat = "identity") + facet_wrap(~ season) + labs(title = "Positional WAR in the NFL Draft", subtitle = "Mean Positional WAR by Round from 2010-2020", y = "Mean Positional War by Round", x = "Round Picked") + theme(axis.text.x = element_blank())
 
 rounds_over_time
+cor(value_draft_picks$war, value_draft_picks$round)
 ```
 
 
@@ -264,7 +265,7 @@ value_picks_wins_rounds2_7 <- value_picks_wins_aggregated %>%
 draft_value_r2_7 <- cor(value_picks_wins_rounds2_7$mean_value, value_picks_wins_rounds2_7$v)
 
 ```
-The correlation of average positional WAR value per draft in rounds 2-7 for a team, and their wins over the next 4 years, is `r `draft_value_r2_7`.
+The correlation of average positional WAR value per draft in rounds 2-7 for a team, and their wins over the next 4 years, is `r draft_value_r2_7`.
 
 This also provides no correlation. Instead of subbing out round 1, I'll sub out quarterbacks, and see if this provides any clearer answers. This unfortunately is still a messy valuation, as it now discredits drafting a QB.
 
